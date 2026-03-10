@@ -246,7 +246,7 @@ defmodule SymphonyElixir.CoreTest do
           }
         },
         claimed: MapSet.new([issue_id]),
-        codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
+        agent_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
         retry_attempts: %{}
       }
 
@@ -309,7 +309,7 @@ defmodule SymphonyElixir.CoreTest do
           }
         },
         claimed: MapSet.new([issue_id]),
-        codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
+        agent_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
         retry_attempts: %{}
       }
 
@@ -351,7 +351,7 @@ defmodule SymphonyElixir.CoreTest do
         }
       },
       claimed: MapSet.new([issue_id]),
-      codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
+      agent_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
       retry_attempts: %{}
     }
 
@@ -398,7 +398,7 @@ defmodule SymphonyElixir.CoreTest do
         }
       },
       claimed: MapSet.new([issue_id]),
-      codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
+      agent_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
       retry_attempts: %{}
     }
 
@@ -861,7 +861,7 @@ defmodule SymphonyElixir.CoreTest do
     end
   end
 
-  test "agent runner forwards timestamped codex updates to recipient" do
+  test "agent runner forwards timestamped agent updates to recipient" do
     test_root =
       Path.join(
         System.tmp_dir!(),
@@ -920,7 +920,7 @@ defmodule SymphonyElixir.CoreTest do
         id: "issue-live-updates",
         identifier: "MT-99",
         title: "Smoke test",
-        description: "Capture codex updates",
+        description: "Capture agent updates",
         state: "In Progress",
         url: "https://example.org/issues/MT-99",
         labels: ["backend"]
@@ -935,7 +935,7 @@ defmodule SymphonyElixir.CoreTest do
                  issue_state_fetcher: fn [_issue_id] -> {:ok, [%{issue | state: "Done"}]} end
                )
 
-      assert_receive {:codex_worker_update, "issue-live-updates",
+      assert_receive {:agent_worker_update, "issue-live-updates",
                       %{
                         event: :session_started,
                         timestamp: %DateTime{},

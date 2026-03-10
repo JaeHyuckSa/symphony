@@ -1,6 +1,8 @@
 defmodule SymphonyElixir.Codex.AppServer do
   @moduledoc """
   Minimal client for the Codex app-server JSON-RPC 2.0 stream over stdio.
+
+  Implements the agent backend interface for the OpenAI Codex runtime.
   """
 
   require Logger
@@ -185,7 +187,7 @@ defmodule SymphonyElixir.Codex.AppServer do
   defp port_metadata(port) when is_port(port) do
     case :erlang.port_info(port, :os_pid) do
       {:os_pid, os_pid} ->
-        %{codex_app_server_pid: to_string(os_pid)}
+        %{agent_pid: to_string(os_pid)}
 
       _ ->
         %{}

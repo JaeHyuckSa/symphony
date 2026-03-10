@@ -6,7 +6,7 @@ defmodule SymphonyElixir.CLI do
   alias SymphonyElixir.LogFile
 
   @acknowledgement_switch :i_understand_that_this_will_be_running_without_the_usual_guardrails
-  @switches [{@acknowledgement_switch, :boolean}, logs_root: :string, port: :integer]
+  @switches [{@acknowledgement_switch, :boolean}, logs_root: :string, port: :integer, backend: :string]
 
   @type ensure_started_result :: {:ok, [atom()]} | {:error, term()}
   @type deps :: %{
@@ -35,14 +35,16 @@ defmodule SymphonyElixir.CLI do
       {opts, [], []} ->
         with :ok <- require_guardrails_acknowledgement(opts),
              :ok <- maybe_set_logs_root(opts, deps),
-             :ok <- maybe_set_server_port(opts, deps) do
+             :ok <- maybe_set_server_port(opts, deps),
+             :ok <- maybe_set_backend(opts) do
           run(Path.expand("WORKFLOW.md"), deps)
         end
 
       {opts, [workflow_path], []} ->
         with :ok <- require_guardrails_acknowledgement(opts),
              :ok <- maybe_set_logs_root(opts, deps),
-             :ok <- maybe_set_server_port(opts, deps) do
+             :ok <- maybe_set_server_port(opts, deps),
+             :ok <- maybe_set_backend(opts) do
           run(workflow_path, deps)
         end
 
@@ -72,7 +74,7 @@ defmodule SymphonyElixir.CLI do
 
   @spec usage_message() :: String.t()
   defp usage_message do
-    "Usage: symphony [--logs-root <path>] [--port <port>] [path-to-WORKFLOW.md]"
+    "Usage: symphony [--logs-root <path>] [--port <port>] [--backend codex|claude|gemini] [path-to-WORKFLOW.md]"
   end
 
   @spec runtime_deps() :: deps()
@@ -114,7 +116,7 @@ defmodule SymphonyElixir.CLI do
   defp acknowledgement_banner do
     lines = [
       "This Symphony implementation is a low key engineering preview.",
-      "Codex will run without any guardrails.",
+      "Agent will run without any guardrails.",
       "SymphonyElixir is not a supported product and is presented as-is.",
       "To proceed, start with `--i-understand-that-this-will-be-running-without-the-usual-guardrails` CLI argument"
     ]
@@ -167,6 +169,24 @@ defmodule SymphonyElixir.CLI do
   defp set_server_port_override(port) when is_integer(port) and port >= 0 do
     Application.put_env(:symphony_elixir, :server_port_override, port)
     :ok
+  end
+
+  @valid_backends ~w(codex claude gemini)
+  defp maybe_set_backend(opts) do
+    case Keyword.get_values(opts, :backend) do
+      [] ->
+        :ok
+
+      values ->
+        backend = values |> List.last() |> String.trim() |> String.downcase()
+
+        if backend in @valid_backends do
+          Application.put_env(:symphony_elixir, :backend_override, backend)
+          :ok
+        else
+          {:error, usage_message()}
+        end
+    end
   end
 
   @spec wait_for_shutdown() :: no_return()

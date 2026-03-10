@@ -1,11 +1,35 @@
 # Symphony Elixir
 
-This directory contains the current Elixir/OTP implementation of Symphony, based on
-[`SPEC.md`](../SPEC.md) at the repository root.
+An orchestrator that polls Linear issues and executes them using Codex, Claude Code, or Gemini CLI.
 
 > [!WARNING]
 > Symphony Elixir is prototype software intended for evaluation only and is presented as-is.
 > We recommend implementing your own hardened version based on `SPEC.md`.
+
+## Quick Start
+
+```bash
+# 1. Install mise (Elixir/Erlang version manager)
+curl https://mise.run | sh
+echo 'eval "$($HOME/.local/bin/mise activate zsh)"' >> ~/.zshrc
+source ~/.zshrc
+
+# 2. Install Elixir/Erlang and build
+cd symphony/elixir
+mise trust
+mise install                    # Installs Erlang 28 + Elixir 1.19.5
+mise exec -- mix setup          # Fetch dependencies
+mise exec -- mix build          # Build escript binary
+
+# 3. Install your preferred agent CLI
+# Claude Code: https://docs.anthropic.com/en/docs/claude-code
+# Gemini CLI:  https://github.com/google-gemini/gemini-cli
+# Codex:       https://github.com/openai/codex
+
+# 4. Configure WORKFLOW.md and run
+export LINEAR_API_KEY="lin_api_..."
+mise exec -- ./bin/symphony --i-understand-that-this-will-be-running-without-the-usual-guardrails ./WORKFLOW.md --port 8080
+```
 
 ## Screenshot
 
@@ -15,13 +39,19 @@ This directory contains the current Elixir/OTP implementation of Symphony, based
 
 1. Polls Linear for candidate work
 2. Creates an isolated workspace per issue
-3. Launches Codex in [App Server mode](https://developers.openai.com/codex/app-server/) inside the
-   workspace
-4. Sends a workflow prompt to Codex
-5. Keeps Codex working on the issue until the work is done
+3. Launches an agent backend (Codex, Claude Code, or Gemini CLI) inside the workspace
+4. Sends a workflow prompt to the agent
+5. Keeps the agent working on the issue until the work is done
 
-During app-server sessions, Symphony also serves a client-side `linear_graphql` tool so that repo
-skills can make raw Linear GraphQL calls.
+### Supported backends
+
+| Backend | Config value | CLI | Notes |
+|---------|-------------|-----|-------|
+| Codex | `codex` | `codex app-server` | JSON-RPC stdio, `linear_graphql` tool |
+| Claude Code | `claude` | `claude -p` | Stateless per-turn, built-in tools + MCP |
+| Gemini CLI | `gemini` | `gemini -p` | Stateless per-turn |
+
+Use `--backend <name>` on the command line or set `agent.backend` in WORKFLOW.md to select a backend.
 
 If a claimed issue moves to a terminal state (`Done`, `Closed`, `Cancelled`, or `Duplicate`),
 Symphony stops the active agent for that issue and cleans up matching workspaces.
@@ -96,10 +126,17 @@ hooks:
   after_create: |
     git clone git@github.com:your-org/your-repo.git .
 agent:
+  backend: claude          # "codex" | "claude" | "gemini"
   max_concurrent_agents: 10
   max_turns: 20
+# Backend-specific settings (only the active backend's section is used)
 codex:
   command: codex app-server
+claude:
+  model: claude-sonnet-4-6
+  allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
+gemini:
+  model: gemini-2.5-pro
 ---
 
 You are working on a Linear issue {{ issue.identifier }}.
@@ -118,8 +155,16 @@ Notes:
 - Supported `codex.thread_sandbox` values: `read-only`, `workspace-write`, `danger-full-access`.
 - Supported `codex.turn_sandbox_policy.type` values: `dangerFullAccess`, `readOnly`,
   `externalSandbox`, `workspaceWrite`.
-- `agent.max_turns` caps how many back-to-back Codex turns Symphony will run in a single agent
+- `agent.backend` selects the agent backend: `codex` (default), `claude`, or `gemini`.
+- `agent.max_turns` caps how many back-to-back turns Symphony will run in a single agent
   invocation when a turn completes normally but the issue is still in an active state. Default: `20`.
+- `claude.model` sets the Claude model (default: `claude-sonnet-4-6`).
+- `claude.allowed_tools` sets allowed tools for Claude Code (default: `Bash,Read,Edit,Write,Glob,Grep`).
+- `claude.extra_flags` passes additional CLI flags to `claude -p`.
+- `claude.turn_timeout_ms` sets the turn timeout (default: `3600000`).
+- `gemini.model` sets the Gemini model (default: `gemini-2.5-pro`).
+- `gemini.extra_flags` passes additional CLI flags to `gemini`.
+- `gemini.turn_timeout_ms` sets the turn timeout (default: `3600000`).
 - If the Markdown body is blank, Symphony uses a default prompt template that includes the issue
   identifier, title, and body.
 - Use `hooks.after_create` to bootstrap a fresh workspace. For a Git-backed repo, you can run
@@ -159,10 +204,13 @@ The observability UI now runs on a minimal Phoenix stack:
 
 ## Project Layout
 
-- `lib/`: application code and Mix tasks
+- `lib/symphony_elixir/codex/`: Codex app-server backend (original)
+- `lib/symphony_elixir/claude/`: Claude Code backend adapter
+- `lib/symphony_elixir/gemini/`: Gemini CLI backend adapter
+- `lib/symphony_elixir/agent_runner.ex`: Backend-agnostic agent runner
+- `lib/`: remaining application code and Mix tasks
 - `test/`: ExUnit coverage for runtime behavior
 - `WORKFLOW.md`: in-repo workflow contract used by local runs
-- `../.codex/`: repository-local Codex skills and setup helpers
 
 ## Testing
 

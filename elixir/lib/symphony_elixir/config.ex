@@ -28,10 +28,18 @@ defmodule SymphonyElixir.Config do
   @default_max_concurrent_agents 10
   @default_agent_max_turns 20
   @default_max_retry_backoff_ms 300_000
+  @default_agent_backend "codex"
   @default_codex_command "codex app-server"
   @default_codex_turn_timeout_ms 3_600_000
   @default_codex_read_timeout_ms 5_000
   @default_codex_stall_timeout_ms 300_000
+  @default_claude_model "claude-sonnet-4-6"
+  @default_claude_allowed_tools "Bash,Read,Edit,Write,Glob,Grep"
+  @default_claude_extra_flags ""
+  @default_claude_turn_timeout_ms 3_600_000
+  @default_gemini_model "gemini-2.5-pro"
+  @default_gemini_extra_flags ""
+  @default_gemini_turn_timeout_ms 3_600_000
   @default_codex_approval_policy %{
     "reject" => %{
       "sandbox_approval" => true,
@@ -82,6 +90,7 @@ defmodule SymphonyElixir.Config do
                                type: :map,
                                default: %{},
                                keys: [
+                                 backend: [type: :string, default: @default_agent_backend],
                                  max_concurrent_agents: [
                                    type: :integer,
                                    default: @default_max_concurrent_agents
@@ -97,6 +106,34 @@ defmodule SymphonyElixir.Config do
                                  max_concurrent_agents_by_state: [
                                    type: {:map, :string, :pos_integer},
                                    default: %{}
+                                 ]
+                               ]
+                             ],
+                             claude: [
+                               type: :map,
+                               default: %{},
+                               keys: [
+                                 model: [type: :string, default: @default_claude_model],
+                                 allowed_tools: [
+                                   type: :string,
+                                   default: @default_claude_allowed_tools
+                                 ],
+                                 extra_flags: [type: :string, default: @default_claude_extra_flags],
+                                 turn_timeout_ms: [
+                                   type: :integer,
+                                   default: @default_claude_turn_timeout_ms
+                                 ]
+                               ]
+                             ],
+                             gemini: [
+                               type: :map,
+                               default: %{},
+                               keys: [
+                                 model: [type: :string, default: @default_gemini_model],
+                                 extra_flags: [type: :string, default: @default_gemini_extra_flags],
+                                 turn_timeout_ms: [
+                                   type: :integer,
+                                   default: @default_gemini_turn_timeout_ms
                                  ]
                                ]
                              ],
@@ -273,6 +310,49 @@ defmodule SymphonyElixir.Config do
 
   def max_concurrent_agents_for_state(_state_name), do: max_concurrent_agents()
 
+  @spec agent_backend() :: String.t()
+  def agent_backend do
+    case Application.get_env(:symphony_elixir, :backend_override) do
+      backend when is_binary(backend) and backend != "" -> backend
+      _ -> get_in(validated_workflow_options(), [:agent, :backend]) || @default_agent_backend
+    end
+  end
+
+  @spec claude_model() :: String.t()
+  def claude_model do
+    get_in(validated_workflow_options(), [:claude, :model]) || @default_claude_model
+  end
+
+  @spec claude_allowed_tools() :: String.t()
+  def claude_allowed_tools do
+    get_in(validated_workflow_options(), [:claude, :allowed_tools]) || @default_claude_allowed_tools
+  end
+
+  @spec claude_extra_flags() :: String.t()
+  def claude_extra_flags do
+    get_in(validated_workflow_options(), [:claude, :extra_flags]) || @default_claude_extra_flags
+  end
+
+  @spec claude_turn_timeout_ms() :: pos_integer()
+  def claude_turn_timeout_ms do
+    get_in(validated_workflow_options(), [:claude, :turn_timeout_ms]) || @default_claude_turn_timeout_ms
+  end
+
+  @spec gemini_model() :: String.t()
+  def gemini_model do
+    get_in(validated_workflow_options(), [:gemini, :model]) || @default_gemini_model
+  end
+
+  @spec gemini_extra_flags() :: String.t()
+  def gemini_extra_flags do
+    get_in(validated_workflow_options(), [:gemini, :extra_flags]) || @default_gemini_extra_flags
+  end
+
+  @spec gemini_turn_timeout_ms() :: pos_integer()
+  def gemini_turn_timeout_ms do
+    get_in(validated_workflow_options(), [:gemini, :turn_timeout_ms]) || @default_gemini_turn_timeout_ms
+  end
+
   @spec codex_command() :: String.t()
   def codex_command do
     get_in(validated_workflow_options(), [:codex, :command])
@@ -366,9 +446,14 @@ defmodule SymphonyElixir.Config do
     with {:ok, _workflow} <- current_workflow(),
          :ok <- require_tracker_kind(),
          :ok <- require_linear_token(),
-         :ok <- require_linear_project(),
-         :ok <- require_valid_codex_runtime_settings() do
-      require_codex_command()
+         :ok <- require_linear_project() do
+      if agent_backend() == "codex" do
+        with :ok <- require_valid_codex_runtime_settings() do
+          require_codex_command()
+        end
+      else
+        :ok
+      end
     end
   end
 
@@ -451,6 +536,8 @@ defmodule SymphonyElixir.Config do
       workspace: extract_workspace_options(section_map(config, "workspace")),
       agent: extract_agent_options(section_map(config, "agent")),
       codex: extract_codex_options(section_map(config, "codex")),
+      claude: extract_claude_options(section_map(config, "claude")),
+      gemini: extract_gemini_options(section_map(config, "gemini")),
       hooks: extract_hooks_options(section_map(config, "hooks")),
       observability: extract_observability_options(section_map(config, "observability")),
       server: extract_server_options(section_map(config, "server"))
@@ -479,6 +566,7 @@ defmodule SymphonyElixir.Config do
 
   defp extract_agent_options(section) do
     %{}
+    |> put_if_present(:backend, scalar_string_value(Map.get(section, "backend")))
     |> put_if_present(:max_concurrent_agents, integer_value(Map.get(section, "max_concurrent_agents")))
     |> put_if_present(:max_turns, positive_integer_value(Map.get(section, "max_turns")))
     |> put_if_present(:max_retry_backoff_ms, positive_integer_value(Map.get(section, "max_retry_backoff_ms")))
@@ -494,6 +582,21 @@ defmodule SymphonyElixir.Config do
     |> put_if_present(:turn_timeout_ms, integer_value(Map.get(section, "turn_timeout_ms")))
     |> put_if_present(:read_timeout_ms, integer_value(Map.get(section, "read_timeout_ms")))
     |> put_if_present(:stall_timeout_ms, integer_value(Map.get(section, "stall_timeout_ms")))
+  end
+
+  defp extract_claude_options(section) do
+    %{}
+    |> put_if_present(:model, scalar_string_value(Map.get(section, "model")))
+    |> put_if_present(:allowed_tools, scalar_string_value(Map.get(section, "allowed_tools")))
+    |> put_if_present(:extra_flags, scalar_string_value(Map.get(section, "extra_flags")))
+    |> put_if_present(:turn_timeout_ms, integer_value(Map.get(section, "turn_timeout_ms")))
+  end
+
+  defp extract_gemini_options(section) do
+    %{}
+    |> put_if_present(:model, scalar_string_value(Map.get(section, "model")))
+    |> put_if_present(:extra_flags, scalar_string_value(Map.get(section, "extra_flags")))
+    |> put_if_present(:turn_timeout_ms, integer_value(Map.get(section, "turn_timeout_ms")))
   end
 
   defp extract_hooks_options(section) do

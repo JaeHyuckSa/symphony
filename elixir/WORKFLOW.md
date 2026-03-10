@@ -28,6 +28,9 @@ hooks:
 agent:
   max_concurrent_agents: 10
   max_turns: 20
+claude:
+  model: claude-sonnet-4-6
+  allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
 codex:
   command: codex --config shell_environment_policy.inherit=all --config model_reasoning_effort=xhigh --model gpt-5.3-codex app-server
   approval_policy: never
